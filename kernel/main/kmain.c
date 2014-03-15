@@ -41,7 +41,6 @@
 #include "fs/vfs_syscall.h"
 #include "fs/fcntl.h"
 #include "fs/stat.h"
-
 #include "test/kshell/kshell.h"
 
 GDB_DEFINE_HOOK(boot)
@@ -347,6 +346,13 @@ initproc_run(int arg1, void *arg2)
         kshell_destroy(kshell);
 #endif
         /* PROCS }}} */
+    
+    
+#ifdef __VFS__
+        /*TEST VFS*/
+        vfstest_main(1,NULL);
+        do_exit(0);
+#endif
 
         return NULL;
 }
