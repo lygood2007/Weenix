@@ -73,6 +73,23 @@ get_empty_fd(proc_t *p)
 int
 do_open(const char *filename, int oflags)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_open");
+    /* Check to see if oflags is valid */
+    if(!O_IS_VALID(oflags))
+        return -EINVAL;
+    /* Get the next empty file descriptor */
+    int fd = 0;
+    if((fd = get_empty_fd(curproc)) < 0)
+    {
+        /* EMFILE */
+        return fd;
+    }
+
+    /* Call fget to get a fresh file_t. */
+    file_t* file = NULL;
+    if((file = fget(-1)) == NULL)
+    {
+        return -NOMEM;
+    }
+        //NOT_YET_IMPLEMENTED("VFS: do_open");
         return -1;
 }

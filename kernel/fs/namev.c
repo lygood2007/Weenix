@@ -25,8 +25,28 @@
 int
 lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
 {
-        NOT_YET_IMPLEMENTED("VFS: lookup");
-        return 0;
+    if(dir == NULL || name == NULL || len == 0)
+        return -ENOENT;
+    vnode_ops* ops = dir->vn_ops;
+    KASSERT(ops);
+    if(ops->lookup == NULL)
+        return -ENOTDIR;
+    else
+    {
+        /* Do not process the .. because it can be found in lookup */
+        int ret = 0;
+        vnode* node;
+        if((ret = ops->lookup(dir, name, len, node)) < 0)
+        {
+            /* lookup doesn't need to vref, it's already done*/
+            return ret;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
 }
 
 
@@ -48,11 +68,102 @@ lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
  * Note: A successful call to this causes vnode refcount on *res_vnode to
  * be incremented.
  */
+ /*
+    ENOENT for path not exist
+    ENAMETOOLONG if a component of path is too long
+  */
 int
 dir_namev(const char *pathname, size_t *namelen, const char **name,
           vnode_t *base, vnode_t **res_vnode)
 {
-        NOT_YET_IMPLEMENTED("VFS: dir_namev");
+        //TODO: check
+        if(pathname == NULL)
+            return -ENOENT;
+        int path_len = strlen(pathname);
+        if(path_len == 0)
+            return -ENOENT;
+        else if(path_len >= MAXPATHLEN)
+            return -ENAMETOOLONG;
+
+        /* initialize the output arguments */
+        *res_vnode = NULL;
+
+        vnode_t* parent = NULL;
+        if(base == NULL)
+        {
+            parent = curproc->p_cwd;
+        }else 
+        {
+            if(pathname[0] == '/')
+            {
+                parent = vfs_root_vn;
+            }else
+            {
+                parent = base;
+            }
+        }
+        vref(parent);
+        int i = 0;
+        while( i < path_len )
+        {
+            if(pathname[i] == '/')
+            {
+                i++;
+                continue;
+            }else
+            {
+                /* find the next one, using greedy approach */
+                int start_index = i;
+                int end_index = i+1;
+                int should_terminate = 0;
+                while(end_index < path_len && pathname[end_index] != '/')
+                {
+                    end_index++;
+                }
+                if(end_index - start_index > NAME_LEN)
+                {
+                    vput(parent);
+                    return -ENAMETOOLONG;
+                }
+                if(end_index == path_len)
+                    should_terminate = 1;
+
+                char tmp_name[NAME_LEN+1];
+                const char* tmp_name_ptr = tmp_name;
+                memset(tmp_name,0,sizeof(tmp_name));
+                size_t tmp_name_len = end_index-start_index;
+                strncpy(tmp_name, pathname+start_index,tmp_name_len);
+                tmp_name[tmp_name_len] = '\0';
+                if(should_terminate == 1)
+                {
+                    if(!S_ISDIR(parent->vn_mode))
+                    {
+                        vput(parent);
+                        return -ENOTDIR;
+                    }
+                    *namelen = tmp_name_len;
+                    strncpy(*name, tmp_name_ptr, *namelen);
+                    *((*name)+namelen) = '\0';
+                    *res_vnode = parent;
+                    return 0;
+                }
+                int ret = 0;
+                vnote_t* next = NULL;
+                if((ret = lookup(parent, tmp_name, &next)) < 0)
+                {
+                    return ret;
+                }else
+                {
+                    parent = next;
+                }
+            }
+        }
+
+        /* If the program gets to here, means the string is 
+         * like: /s5fs/bin/ls/, /s5fs/bin//
+         */
+        *res_vnode = parent;
+        *namelen = 0;
         return 0;
 }
 
@@ -67,8 +178,55 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
 int
 open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
 {
-        NOT_YET_IMPLEMENTED("VFS: open_namev");
-        return 0;
+    vnote_t* dir = NULL;
+    size_t name_len = 0;
+    char name[NAME_LEN+1];
+    const char* name = name;
+    int ret = 0;
+    if((ret = dir_namev(pathname, &name_len, &name, NULL, &dir)) < 0)
+    {
+        if(dir)
+        {
+            vput(dir);
+        }
+        return ret;
+    }
+    KASSERT(dir);
+    vnode_t* target = NULL;
+    ret = lookup(dir, name, name_len, &target);
+    if(ret == 0) /* already there*/
+    {   
+        vput(dir);
+        return target;
+    }else if(ret < 0)
+    {
+        if(ret == -ENOENT)
+        {
+            if((flag & O_CREAT) != 0)
+            {
+                vnode_ops* ops = dir->vn_ops;
+                KASSERT(ops);
+                KASSERT(ops->create != NULL);
+                vnode_t* result = NULL;
+                if((ret = ops->create(dir, name, name_len, &result)) < 0)
+                {
+                    if(result)
+                    {
+                        vput(result);
+                    }
+                    vput(dir);
+                    return ret;
+                }
+            }else
+            {
+                vput(dir);
+                return ret;
+            }
+        }else
+        {
+            return ret;
+        }
+    }
 }
 
 #ifdef __GETCWD__

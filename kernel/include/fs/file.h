@@ -6,6 +6,10 @@
 #define FMODE_WRITE   2
 #define FMODE_APPEND  4
 
+#define FMODE_ISREAD(m)      ((m & FMODE_READ) != 0)
+#define FMODE_ISWRITE(m)      ((m & FMODE_WRITE) != 0)
+#define FMODE_ISAPPEND(m)      ((m & FMODE_APPEND) != 0)
+
 struct vnode;
 
 typedef struct file {
